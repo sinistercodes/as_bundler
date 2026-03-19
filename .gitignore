@@ -2,3 +2,5 @@ build/
 docs/
 check/
 test/
+/.claude
+scripts/
