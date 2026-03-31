@@ -1,5 +1,105 @@
 #include "preprocessor.h"
 #include "../fs/fs.h"
+#include <ctype.h>
+
+/* -------------------------------------------------------------------------
+ * LineMap implementation
+ * ---------------------------------------------------------------------- */
+
+LineMap *linemap_create(void) {
+    LineMap *m = malloc(sizeof(LineMap));
+    m->count = 0; m->capacity = 64;
+    m->entries = malloc(m->capacity * sizeof(LineMapEntry));
+    return m;
+}
+
+void linemap_free(LineMap *map) {
+    if (map) { free(map->entries); free(map); }
+}
+
+LineMap *parse_line_directives(const char *content) {
+    LineMap *map = linemap_create();
+    const char *p = content;
+    int current_output_line = 1;
+
+    while (*p) {
+        const char *line_start = p;
+        /* Advance to end of line */
+        while (*p && *p != '\n') p++;
+
+        /* Check if this is a gcc line directive: "# <digit>" */
+        const char *check = line_start;
+        if (check[0] == '#' && check[1] == ' ' && isdigit((unsigned char)check[2])) {
+            /* Parse: # <linenum> "<file>" */
+            int src_line = 0;
+            const char *q = check + 2;
+            while (*q >= '0' && *q <= '9') src_line = src_line * 10 + (*q++ - '0');
+            while (*q == ' ' || *q == '\t') q++;
+            if (*q == '"') {
+                q++;
+                const char *fname_start = q;
+                while (*q && *q != '"') q++;
+                size_t fname_len = (size_t)(q - fname_start);
+                if (fname_len < MAX_PATH - 1) {
+                    if (map->count >= map->capacity) {
+                        map->capacity *= 2;
+                        map->entries = realloc(map->entries, map->capacity * sizeof(LineMapEntry));
+                    }
+                    LineMapEntry *e = &map->entries[map->count++];
+                    e->preprocessed_line = current_output_line;
+                    e->source_line = src_line;
+                    strncpy(e->file, fname_start, fname_len);
+                    e->file[fname_len] = '\0';
+                }
+            }
+        }
+
+        if (*p == '\n') { current_output_line++; p++; }
+    }
+    return map;
+}
+
+int linemap_lookup(const LineMap *map, int preprocessed_line,
+                   char *file_out, int file_out_size) {
+    /* Find the last entry with preprocessed_line <= query */
+    int best = -1;
+    for (int i = 0; i < map->count; i++) {
+        if (map->entries[i].preprocessed_line <= preprocessed_line)
+            best = i;
+        else
+            break;
+    }
+    if (best < 0) return 0;
+    const LineMapEntry *e = &map->entries[best];
+    int offset = preprocessed_line - e->preprocessed_line;
+    strncpy(file_out, e->file, file_out_size - 1);
+    file_out[file_out_size - 1] = '\0';
+    return e->source_line + offset;
+}
+
+char *strip_line_directives(char *content) {
+    size_t size = strlen(content);
+    char *result = malloc(size + 1);
+    char *dst = result;
+    const char *p = content;
+    while (*p) {
+        const char *line_start = p;
+        while (*p && *p != '\n') p++;
+        /* Skip gcc line directive lines */
+        if (line_start[0] == '#' && line_start[1] == ' ' &&
+            isdigit((unsigned char)line_start[2])) {
+            if (*p == '\n') p++;
+            continue;
+        }
+        size_t len = (size_t)(p - line_start);
+        memcpy(dst, line_start, len);
+        dst += len;
+        if (*p == '\n') { *dst++ = '\n'; p++; }
+    }
+    *dst = '\0';
+    free(content);
+    return result;
+}
 
 /* -------------------------------------------------------------------------
  * Directory helpers
@@ -17,7 +117,7 @@ void ensure_dir(const char *dir) {
  * C preprocessor execution
  * ---------------------------------------------------------------------- */
 
-char *run_preprocessor(const char *content) {
+char *run_preprocessor(const char *content, LineMap **map_out) {
     /* Place temp files in .build_cache next to the source directory (or cwd) */
     char cache_dir[MAX_PATH];
     if (g_input_dir[0] != '\0') {
@@ -59,12 +159,12 @@ char *run_preprocessor(const char *content) {
     for (char *p = cmd_err;    *p; p++) if (*p == '\\') *p = '/';
     for (char *p = cmd_idir;   *p; p++) if (*p == '\\') *p = '/';
 
-    /* Build command: gcc -E -P -x c [-D...] [-I src_dir] input -o output */
+    /* Build command: gcc -E -x c [-D...] [-I src_dir] input -o output */
     size_t cmd_size = 1024 + (size_t)g_define_count * 256 + MAX_PATH * 3;
     char  *cmd      = (char *)malloc(cmd_size);
     int    pos      = 0;
 
-    pos += snprintf(cmd + pos, cmd_size - (size_t)pos, "gcc -E -P -x c");
+    pos += snprintf(cmd + pos, cmd_size - (size_t)pos, "gcc -E -C -x c");
 
     for (int i = 0; i < g_define_count; i++)
         pos += snprintf(cmd + pos, cmd_size - (size_t)pos, " %s", g_defines[i]);
@@ -110,6 +210,10 @@ char *run_preprocessor(const char *content) {
     remove(output_path);
     remove(err_path);
 
+    if (map_out) {
+        *map_out = parse_line_directives(output);
+    }
+    output = strip_line_directives(output);
     return output;
 }
 

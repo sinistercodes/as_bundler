@@ -11,15 +11,42 @@
 void ensure_dir(const char *dir);
 
 /* -------------------------------------------------------------------------
+ * Line directive map — built from gcc's "# linenum \"file\"" output
+ * ---------------------------------------------------------------------- */
+
+typedef struct {
+    int  preprocessed_line;   /* line number in preprocessor output */
+    char file[MAX_PATH];      /* source file rel_path */
+    int  source_line;         /* line number within that source file */
+} LineMapEntry;
+
+typedef struct {
+    LineMapEntry *entries;
+    int           count;
+    int           capacity;
+} LineMap;
+
+LineMap *linemap_create(void);
+void     linemap_free(LineMap *map);
+/* Parse gcc line directives and build map. Returns map (caller frees). */
+LineMap *parse_line_directives(const char *preprocessor_output);
+/* Return source file and line for a given preprocessed line. Returns 0 if not found. */
+int      linemap_lookup(const LineMap *map, int preprocessed_line,
+                        char *file_out, int file_out_size);
+/* Strip "# <num> \"...\"" lines from content. Returns new malloc'd string. */
+char    *strip_line_directives(char *content);
+
+/* -------------------------------------------------------------------------
  * C preprocessor execution
  *
  * Writes combined content to a temp file under .build_cache/, runs
- * gcc -E -P -x c with any -D flags and -I source dir, then reads and
+ * gcc -E -x c with any -D flags and -I source dir, then reads and
  * returns the preprocessed result as a new malloc'd string.
+ * If map_out is not NULL, parses line directives before stripping them.
  * Exits the process on failure.
  * ---------------------------------------------------------------------- */
 
-char *run_preprocessor(const char *content);
+char *run_preprocessor(const char *content, LineMap **map_out);
 
 /* -------------------------------------------------------------------------
  * Pragma-marker conversion

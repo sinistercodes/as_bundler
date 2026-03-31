@@ -338,6 +338,7 @@ int main(int argc, char **argv) {
         get_relative_path(f->path, rel_path);
 
         ptr += sprintf(ptr, "#pragma BUNDLER_FILE %s\n", rel_path);
+        ptr += sprintf(ptr, "#line 1 \"%s\"\n", rel_path);
 
         size_t content_len = strlen(content);
         if ((size_t)(ptr - combined) + content_len + 4 > total_size) {
@@ -387,11 +388,12 @@ int main(int argc, char **argv) {
     combined = evaluate_string_macros(combined, "STRHASH",   0);
 
     /* --- Step 6: Run C preprocessor --- */
+    LineMap *line_map = NULL;
     if (!g_skip_preprocess) {
         /* Hide #include_lib directives so gcc -E ignores them */
         combined = protect_lib_includes(combined);
         printf("Running C preprocessor (single pass)...\n");
-        char *preprocessed = run_preprocessor(combined);
+        char *preprocessed = run_preprocessor(combined, &line_map);
         free(combined);
         combined = preprocessed;
         /* Restore #include_lib directives after preprocessing */
@@ -568,9 +570,22 @@ int main(int argc, char **argv) {
         }
 
         int original_line = 0;
-        if (found_file && file_idx >= 0)
+        char mapped_file[MAX_PATH] = "";
+
+        if (line_map) {
+            /* Fast path: use gcc line directives */
+            original_line = linemap_lookup(line_map, errors->errors[i].line,
+                                           mapped_file, sizeof(mapped_file));
+            if (original_line > 0) {
+                strncpy(file_path, mapped_file, sizeof(file_path) - 1);
+                file_path[sizeof(file_path) - 1] = '\0';
+                found_file = NULL; /* not needed for display */
+            }
+        } else if (found_file && file_idx >= 0) {
+            /* Fallback: slow text-matching path (--no-preprocess case) */
             original_line = find_line_in_source(
                 found_file, combined, errors->errors[i].line, &index[file_idx]);
+        }
 
         if (original_line > 0) {
             fprintf(stderr, "%s:%d:%d: %s\n",
@@ -588,6 +603,7 @@ int main(int argc, char **argv) {
     }
     if (errors->error_count > 0) fprintf(stderr, "\n");
 
+    if (line_map) { linemap_free(line_map); line_map = NULL; }
     free(index);
 
     /* --- Step 10a: Strip comments --- */
