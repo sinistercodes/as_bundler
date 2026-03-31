@@ -20,19 +20,22 @@ void linemap_free(LineMap *map) {
 LineMap *parse_line_directives(const char *content) {
     LineMap *map = linemap_create();
     const char *p = content;
-    int current_output_line = 1;
+    /* Track the line number in the *stripped* output (directive lines are
+     * removed by strip_line_directives, so AngelScript never sees them).
+     * preprocessed_line must match what AngelScript reports, not raw positions. */
+    int next_stripped_line = 1;
 
     while (*p) {
         const char *line_start = p;
-        /* Advance to end of line */
         while (*p && *p != '\n') p++;
 
-        /* Check if this is a gcc line directive: "# <digit>" */
-        const char *check = line_start;
-        if (check[0] == '#' && check[1] == ' ' && isdigit((unsigned char)check[2])) {
+        int is_directive = (line_start[0] == '#' && line_start[1] == ' ' &&
+                            isdigit((unsigned char)line_start[2]));
+
+        if (is_directive) {
             /* Parse: # <linenum> "<file>" */
             int src_line = 0;
-            const char *q = check + 2;
+            const char *q = line_start + 2;
             while (*q >= '0' && *q <= '9') src_line = src_line * 10 + (*q++ - '0');
             while (*q == ' ' || *q == '\t') q++;
             if (*q == '"') {
@@ -46,15 +49,19 @@ LineMap *parse_line_directives(const char *content) {
                         map->entries = realloc(map->entries, map->capacity * sizeof(LineMapEntry));
                     }
                     LineMapEntry *e = &map->entries[map->count++];
-                    e->preprocessed_line = current_output_line;
+                    e->preprocessed_line = next_stripped_line;
                     e->source_line = src_line;
                     strncpy(e->file, fname_start, fname_len);
                     e->file[fname_len] = '\0';
                 }
             }
+            /* Directive lines are stripped — do NOT increment next_stripped_line */
+        } else {
+            /* Content line survives stripping */
+            next_stripped_line++;
         }
 
-        if (*p == '\n') { current_output_line++; p++; }
+        if (*p == '\n') p++;
     }
     return map;
 }
