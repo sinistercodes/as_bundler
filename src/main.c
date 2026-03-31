@@ -123,15 +123,21 @@ int main(int argc, char **argv) {
     char protect_fmark[64][MAX_PATH];
     int  protect_fmark_count = 0;
 
-    /* --- Argument parsing --- */
-    int first_source = -1;
+    /* --- Argument parsing ---
+     * Two-pass: first collect all flags (flags/sources may appear in any order,
+     * like gcc), then collect source paths. is_flag_arg[i] marks argv[i] as a
+     * value consumed by a preceding flag (not a source path). */
+    int *is_flag_arg = (int *)calloc((size_t)argc, sizeof(int));
+    int  first_source = -1;
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
 
         if (strcmp(arg, "--help") == 0) {
+            free(is_flag_arg);
             print_help(argv[0]);
             return 0;
         } else if (strcmp(arg, "-v") == 0 || strcmp(arg, "--version") == 0) {
+            free(is_flag_arg);
             printf("%s\n", BUNDLER_VERSION);
             return 0;
         } else if (strcmp(arg, "--strip") == 0 || strcmp(arg, "-s") == 0) {
@@ -146,14 +152,17 @@ int main(int argc, char **argv) {
             g_scramble_strings = 1;
         } else if (strcmp(arg, "-o") == 0) {
             if (i + 1 < argc) {
+                is_flag_arg[i + 1] = 1;
                 output_file = argv[++i];
                 g_verbose   = 1;
             } else {
                 fprintf(stderr, "Error: -o requires a filename argument\n");
+                free(is_flag_arg);
                 return 1;
             }
         } else if (strcmp(arg, "--prepend") == 0 || strcmp(arg, "-p") == 0) {
             if (i + 1 < argc) {
+                is_flag_arg[i + 1] = 1;
                 char *real = realpath(argv[++i], NULL);
                 if (real) {
                     strncpy(g_prepend_file, real, MAX_PATH - 1);
@@ -164,10 +173,12 @@ int main(int argc, char **argv) {
                 g_prepend_file[MAX_PATH - 1] = '\0';
             } else {
                 fprintf(stderr, "Error: --prepend requires a file path argument\n");
+                free(is_flag_arg);
                 return 1;
             }
         } else if (strcmp(arg, "--header") == 0 || strcmp(arg, "-H") == 0) {
             if (i + 1 < argc) {
+                is_flag_arg[i + 1] = 1;
                 char *real = realpath(argv[++i], NULL);
                 if (real) {
                     strncpy(g_header_file, real, MAX_PATH - 1);
@@ -178,6 +189,7 @@ int main(int argc, char **argv) {
                 g_header_file[MAX_PATH - 1] = '\0';
             } else {
                 fprintf(stderr, "Error: --header requires a file path argument\n");
+                free(is_flag_arg);
                 return 1;
             }
         } else if (strncmp(arg, "-D", 2) == 0) {
@@ -189,39 +201,49 @@ int main(int argc, char **argv) {
             g_defines[g_define_count++] = (char *)arg;
         } else if (strcmp(arg, "--stub") == 0) {
             if (i + 1 < argc && g_stub_path_count < MAX_STUB_DIRS) {
+                is_flag_arg[i + 1] = 1;
                 strncpy(g_stub_paths[g_stub_path_count++], argv[++i], MAX_PATH - 1);
             } else {
                 fprintf(stderr, "Error: --stub requires a file path argument\n");
+                free(is_flag_arg);
                 return 1;
             }
         } else if (strcmp(arg, "--stub-dir") == 0) {
             if (i + 1 < argc && g_stub_dir_count < MAX_STUB_DIRS) {
+                is_flag_arg[i + 1] = 1;
                 strncpy(g_stub_dirs[g_stub_dir_count++], argv[++i], MAX_PATH - 1);
             } else {
                 fprintf(stderr, "Error: --stub-dir requires a directory argument\n");
+                free(is_flag_arg);
                 return 1;
             }
         } else if (strcmp(arg, "--emit-stub") == 0) {
             g_emit_stub = 1;
         } else if (strcmp(arg, "--protect") == 0) {
             if (i + 1 < argc && g_protect_name_count < MAX_PROTECT_NAMES) {
+                is_flag_arg[i + 1] = 1;
                 g_protect_names[g_protect_name_count++] = strdup(argv[++i]);
             } else {
                 fprintf(stderr, "Error: --protect requires a name argument\n");
+                free(is_flag_arg);
                 return 1;
             }
         } else if (strcmp(arg, "--protect-namespace") == 0) {
             if (i + 1 < argc && protect_ns_count < 64) {
+                is_flag_arg[i + 1] = 1;
                 strncpy(protect_ns[protect_ns_count++], argv[++i], 255);
             } else {
                 fprintf(stderr, "Error: --protect-namespace requires a namespace argument\n");
+                free(is_flag_arg);
                 return 1;
             }
         } else if (strcmp(arg, "--protect-file") == 0) {
             if (i + 1 < argc && protect_fmark_count < 64) {
+                is_flag_arg[i + 1] = 1;
                 strncpy(protect_fmark[protect_fmark_count++], argv[++i], MAX_PATH - 1);
             } else {
                 fprintf(stderr, "Error: --protect-file requires a marker argument\n");
+                free(is_flag_arg);
                 return 1;
             }
         } else if (strcmp(arg, "--protect-string-literals") == 0) {
@@ -231,28 +253,33 @@ int main(int argc, char **argv) {
             /* Optional next arg: path.  If it starts with '-' or doesn't
              * exist, use the default filename. */
             if (i + 1 < argc && argv[i + 1][0] != '-') {
+                is_flag_arg[i + 1] = 1;
                 strncpy(g_symbol_map_path, argv[++i], MAX_PATH - 1);
             } else {
                 strncpy(g_symbol_map_path, "symbol_map.txt", MAX_PATH - 1);
             }
         } else if (strcmp(arg, "--symbol-map-format") == 0) {
             if (i + 1 < argc) {
+                is_flag_arg[i + 1] = 1;
                 strncpy(g_symbol_map_format, argv[++i], 15);
                 g_symbol_map_format[15] = '\0';
             } else {
                 fprintf(stderr, "Error: --symbol-map-format requires a format argument\n");
+                free(is_flag_arg);
                 return 1;
             }
         } else if (arg[0] != '-') {
-            first_source = i;
-            break;
+            /* Source path — record first one, continue parsing remaining flags */
+            if (first_source < 0) first_source = i;
         } else {
             fprintf(stderr, "Unknown option: %s\n", arg);
+            free(is_flag_arg);
             return 1;
         }
     }
 
     if (first_source < 0) {
+        free(is_flag_arg);
         print_help(argv[0]);
         return 1;
     }
@@ -296,8 +323,9 @@ int main(int argc, char **argv) {
         printf("Scanning directory: %s\n", argv[first_source]);
     }
 
-    /* --- Collect source files --- */
-    for (int i = first_source; i < argc; i++) {
+    /* --- Collect source files (flags and sources may appear in any order) --- */
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] == '-' || is_flag_arg[i]) continue;
         if (is_directory(argv[i])) {
             scan_directory(argv[i]);
         } else if (ends_with_as(argv[i])) {
@@ -306,6 +334,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Warning: Skipping non-.as file: %s\n", argv[i]);
         }
     }
+    free(is_flag_arg);
 
     if (g_files.count == 0) {
         fprintf(stderr, "Error: No .as files found\n");
@@ -338,7 +367,17 @@ int main(int argc, char **argv) {
         get_relative_path(f->path, rel_path);
 
         ptr += sprintf(ptr, "#pragma BUNDLER_FILE %s\n", rel_path);
-        ptr += sprintf(ptr, "#line 1 \"%s\"\n", rel_path);
+
+        /* Only inject #line directives when the C preprocessor will run.
+         * AngelScript does not understand #line, and gcc treats '\' in the
+         * path as escape sequences, so normalize to forward slashes. */
+        if (!g_skip_preprocess) {
+            char rel_path_fwd[MAX_PATH];
+            strncpy(rel_path_fwd, rel_path, MAX_PATH - 1);
+            rel_path_fwd[MAX_PATH - 1] = '\0';
+            for (char *p = rel_path_fwd; *p; p++) if (*p == '\\') *p = '/';
+            ptr += sprintf(ptr, "#line 1 \"%s\"\n", rel_path_fwd);
+        }
 
         size_t content_len = strlen(content);
         if ((size_t)(ptr - combined) + content_len + 4 > total_size) {
