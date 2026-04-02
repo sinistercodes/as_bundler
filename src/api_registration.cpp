@@ -193,6 +193,9 @@ void RegisterCustomAPIs(asIScriptEngine* engine) {
 	r = engine->RegisterObjectProperty("WindowInfo", "uint64 hwnd", 0);
 	r = engine->RegisterObjectProperty("WindowInfo", "uint pid", sizeof(uint64_t));
 	r = engine->RegisterObjectProperty("WindowInfo", "uint tid", sizeof(uint64_t) + sizeof(unsigned int));
+	r = engine->RegisterObjectProperty("WindowInfo", "string process_name", sizeof(uint64_t) + sizeof(unsigned int) + sizeof(char *));
+	r = engine->RegisterObjectProperty("WindowInfo", "string title", sizeof(uint64_t) + sizeof(unsigned int) + sizeof(char *) + sizeof(char *));
+	r = engine->RegisterObjectProperty("WindowInfo", "string class_name", sizeof(uint64_t) + sizeof(unsigned int) + sizeof(char *) + sizeof(char *) + sizeof(char *));
 	// String members would need special handling in actual implementation
 	// For stub registration, we'll skip them since they complicate POD structure
 

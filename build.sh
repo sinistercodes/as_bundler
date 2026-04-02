@@ -15,12 +15,12 @@ if [[ "$UNAME_OUTPUT" == "Linux" ]]; then
     OS="linux"
     BUILD_TYPE="Debug"
     EXECUTABLE_NAME="as_bundler"
-    OUTPUT_NAME="pcx-bundler"
+    OUTPUT_NAME="pcx"
 elif [[ "$UNAME_OUTPUT" == MINGW* ]] || [[ "$UNAME_OUTPUT" == MSYS* ]] || [[ "$UNAME_OUTPUT" == CYGWIN* ]] || [[ "$UNAME_OUTPUT" == "Windows_NT" ]]; then
     OS="windows"
     BUILD_TYPE="Release"
     EXECUTABLE_NAME="as_bundler.exe"
-    OUTPUT_NAME="pcx-bundler.exe"
+    OUTPUT_NAME="pcx.exe"
 else
     echo "Unsupported operating system: $UNAME_OUTPUT"
     echo "Please report this issue with your system information."
